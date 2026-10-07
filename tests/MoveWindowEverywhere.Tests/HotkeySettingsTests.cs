@@ -7,13 +7,18 @@ namespace MoveWindowEverywhere.Tests;
 public sealed class HotkeySettingsTests
 {
     [Fact]
-    public void 默认快捷键应为AltZ()
+    public void 默认快捷键应为AltZ且恢复快捷键应为AltX()
     {
         HotkeySettings hotkey = HotkeySettings.CreateDefault();
+        HotkeySettings restoreHotkey = HotkeySettings.CreateRestoreDefault();
 
         Assert.Equal("Alt + Z", hotkey.DisplayText);
         Assert.Equal(0x5Au, hotkey.VirtualKey);
         Assert.True(hotkey.IsValid);
+
+        Assert.Equal("Alt + X", restoreHotkey.DisplayText);
+        Assert.Equal(0x58u, restoreHotkey.VirtualKey);
+        Assert.True(restoreHotkey.IsValid);
     }
 
     [Fact]
@@ -38,7 +43,7 @@ public sealed class HotkeySettingsTests
         var hotkey = new HotkeySettings
         {
             Modifiers = HotkeySettings.ModWin | HotkeySettings.ModShift | HotkeySettings.ModAlt | HotkeySettings.ModControl,
-            VirtualKey = 0x31, // '1'
+            VirtualKey = 0x31,
         };
 
         Assert.Equal("Ctrl + Alt + Shift + Win", hotkey.ModifierText);

@@ -17,16 +17,24 @@ public sealed record HotkeySettings
     public const uint ModNoRepeat = 0x4000;
 
     public const uint DefaultVirtualKey = 0x5A; // 'Z'
+    public const uint RestoreDefaultVirtualKey = 0x58; // 'X'
 
     public uint Modifiers { get; set; }
 
     public uint VirtualKey { get; set; }
 
-    /// <summary>默认快捷键：Alt + Z。</summary>
+    /// <summary>默认移动快捷键：Alt + Z。</summary>
     public static HotkeySettings CreateDefault() => new()
     {
         Modifiers = ModAlt | ModNoRepeat,
         VirtualKey = DefaultVirtualKey,
+    };
+
+    /// <summary>默认恢复快捷键：Alt + X。恢复快捷键当前固定，不写入 settings.json。</summary>
+    public static HotkeySettings CreateRestoreDefault() => new()
+    {
+        Modifiers = ModAlt | ModNoRepeat,
+        VirtualKey = RestoreDefaultVirtualKey,
     };
 
     /// <summary>是否至少包含一个修饰键且包含有效按键。</summary>

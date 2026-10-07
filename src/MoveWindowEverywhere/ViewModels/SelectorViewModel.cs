@@ -7,6 +7,12 @@ using MoveWindowEverywhere.Services;
 
 namespace MoveWindowEverywhere.ViewModels;
 
+public enum SelectorMode
+{
+    Move = 0,
+    Restore = 1,
+}
+
 /// <summary>列表中的一行：缩略图、标题、进程名、PID、状态与图标。</summary>
 public sealed class WindowEntryViewModel : INotifyPropertyChanged
 {
@@ -32,19 +38,12 @@ public sealed class WindowEntryViewModel : INotifyPropertyChanged
         _ => string.Empty,
     };
 
-    /// <summary>窗口所在显示器编号，0 表示不标注（单显示器或无法确定）。</summary>
     public int MonitorIndex => Info.MonitorIndex;
 
-    /// <summary>列表右侧展示的显示器标签，未标注时为空串。</summary>
     public string MonitorLabel => Info.MonitorLabel;
 
-    /// <summary>窗口是否已经在目标显示器上，用于把标签显示成强调色。</summary>
     public bool IsOnTargetMonitor => Info.IsOnTargetMonitor;
 
-    /// <summary>
-    /// 窗口缩略图。截取在后台线程进行，完成后逐张回填；
-    /// 尚未截取、窗口无法截取（最小化、无响应、渲染为纯色）时保持为 null，界面显示占位图。
-    /// </summary>
     public ImageSource? Thumbnail
     {
         get => _thumbnail;
@@ -87,7 +86,7 @@ public sealed class WindowEntryViewModel : INotifyPropertyChanged
 
 /// <summary>
 /// 窗口选择器视图模型：维护窗口列表、搜索筛选与选中项。
-/// 目标显示器由调用方在快捷键触发瞬间捕获后传入，选择过程中不再重新计算。
+/// Move 模式列出可移动窗口；Restore 模式只接收调用方筛出的有恢复历史窗口。
 /// </summary>
 public sealed class SelectorViewModel : INotifyPropertyChanged
 {
@@ -95,16 +94,37 @@ public sealed class SelectorViewModel : INotifyPropertyChanged
     private readonly Dictionary<WindowInfo, WindowEntryViewModel> _entryByWindow = new();
     private string _searchText = string.Empty;
 
-    public SelectorViewModel(MonitorInfo? targetMonitor)
+    public SelectorViewModel(MonitorInfo? targetMonitor, SelectorMode mode = SelectorMode.Move)
     {
         TargetMonitor = targetMonitor;
+        Mode = mode;
     }
 
     public ObservableCollection<WindowEntryViewModel> Windows { get; } = new();
 
     public MonitorInfo? TargetMonitor { get; }
 
+    public SelectorMode Mode { get; }
+
     public string TargetMonitorText => TargetMonitor?.ShortDescription ?? "未捕获到目标显示器";
+
+    public string HeaderText => Mode == SelectorMode.Move ? "移动窗口到目标显示器" : "恢复窗口";
+
+    public string ContextText => Mode == SelectorMode.Move ? TargetMonitorText : "只显示当前会话中可恢复的窗口";
+
+    public string EmptyTitle => Mode == SelectorMode.Move ? "没有可移动的窗口" : "没有可恢复的窗口";
+
+    public string EmptySubtitle => Mode == SelectorMode.Move
+        ? "当前没有匹配筛选条件的窗口，按 Esc 关闭"
+        : "没有匹配的恢复历史，按 Esc 关闭";
+
+    public string ActionHint => Mode == SelectorMode.Move
+        ? "↑ ↓ 选择 · Enter 移动 · Esc 取消 · 双击移动"
+        : "↑ ↓ 选择 · Enter 恢复 · Esc 取消 · 双击恢复";
+
+    public string FooterText => Mode == SelectorMode.Move
+        ? "目标：快捷键触发时鼠标所在的显示器"
+        : "恢复：位置 + 尺寸 + 窗口状态";
 
     public string SearchText
     {
@@ -131,7 +151,6 @@ public sealed class SelectorViewModel : INotifyPropertyChanged
 
     public WindowInfo? SelectedWindow => SelectedEntry?.Info;
 
-    /// <summary>按窗口信息取回对应的列表行，供后台截取完成后回填缩略图。</summary>
     public WindowEntryViewModel? FindEntry(WindowInfo window) =>
         window is not null && _entryByWindow.TryGetValue(window, out WindowEntryViewModel? entry) ? entry : null;
 
@@ -181,7 +200,6 @@ public sealed class SelectorViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(SelectedEntry));
     }
 
-    /// <summary>键盘上下移动选中项。</summary>
     public void MoveSelection(int delta)
     {
         if (Windows.Count == 0)

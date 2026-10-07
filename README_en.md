@@ -18,7 +18,7 @@
 
 ## Overview
 
-**Move Window Everywhere** lives quietly in your Windows system tray. Press a global hotkey (default `Alt + Z`), pick any window from the popup selector, and it instantly teleports to the **center of the work area on whichever monitor your mouse cursor was on at the exact moment of the keystroke**.
+**Move Window Everywhere** lives quietly in your Windows system tray. Press the move hotkey (default `Alt + Z`) to pick and move a window to the monitor under the cursor. Every successful move records the window's complete native placement. Press `Alt + X` to open a separate restore selector that shows **only windows with valid restore history**, then restore the selected window's previous position, size, and window state.
 
 - **Single Executable**: Ships as a self-contained single `.exe` (~63 MB). No .NET runtime installation required.
 - **Zero Overhead**: No background daemon services, no web requests, no telemetry. The only registry write is the opt-in `Run` entry, and only when you turn on "Start with Windows".
@@ -52,6 +52,10 @@
 - **Monitor-based targeting, not mouse coordinates**: "Cursor location" means the **monitor** where the cursor sits, not snapping the window top-left corner directly under the cursor. Windows are always neatly centered within the monitor's work area (respecting taskbar boundaries).
 - **Instant snapshot at keystroke**: The target monitor is determined **at the exact millisecond the hotkey is triggered**. Moving your mouse afterwards or dragging the selector window around will never change the target destination.
 - **HWND-based identity**: Windows are tracked by their Win32 handle (`HWND`), not title text. Multiple windows with identical titles (e.g. several browser or terminal windows) will never be confused.
+- **Dedicated restore selector**: `Alt + X` lists only windows that still have valid history. Closed windows and stale handle identities are removed automatically.
+- **Multi-level per-window history**: Moving the same window repeatedly creates multiple restore layers. Each restore pops one layer, so that window remains available until its history is exhausted.
+- **Session-only history**: Restore data is deliberately not persisted across app restarts, avoiding unsafe restoration after Windows reuses an `HWND`.
+- **Full placement restore**: Restore uses native `WINDOWPLACEMENT`, so position, dimensions, and normal/maximized/minimized state are restored together.
 
 ---
 

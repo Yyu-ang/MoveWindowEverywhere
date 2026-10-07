@@ -29,24 +29,27 @@ public sealed record HotkeyFallbackOutcome(
 
 /// <summary>
 /// 全局快捷键服务：基于 RegisterHotKey 与隐藏消息窗口的 WM_HOTKEY。
-/// 快捷键被占用时返回明确失败原因；开启自动换用时会依次尝试备用组合。
+/// 同一个隐藏窗口可挂载多个 HotkeyService 实例，每个实例用独立 hotkey id 过滤自己的消息。
 /// </summary>
 public sealed class HotkeyService : IDisposable
 {
-    public const int HotkeyId = 0x4D57; // 'M' << 8 | 'W'
+    public const int HotkeyId = 0x4D57; // 'M' << 8 | 'W'，保留原 id 兼容既有测试
+    public const int RestoreHotkeyId = 0x4D58;
 
     private readonly HiddenMessageWindow _window;
     private readonly AppLogger _logger;
+    private readonly int _hotkeyId;
     private HotkeySettings _current;
     private bool _registered;
     private bool _disposed;
 
     public event EventHandler? HotKeyPressed;
 
-    public HotkeyService(HiddenMessageWindow window, HotkeySettings settings, AppLogger logger)
+    public HotkeyService(HiddenMessageWindow window, HotkeySettings settings, AppLogger logger, int hotkeyId = HotkeyId)
     {
         _window = window;
         _logger = logger;
+        _hotkeyId = hotkeyId;
         _current = settings.Copy();
         _window.HotKeyReceived += OnHotKeyReceived;
     }
@@ -62,9 +65,6 @@ public sealed class HotkeyService : IDisposable
     /// <summary>
     /// 注册快捷键，被占用时按 <see cref="HotkeyFallbackPlanner"/> 的顺序自动换用备用组合。
     /// </summary>
-    /// <param name="desired">用户设定的组合。</param>
-    /// <param name="allowFallback">是否允许自动换用。关闭时行为等同于 <see cref="TryRegister"/>。</param>
-    /// <param name="maxCandidates">最多尝试多少个候选组合。</param>
     public HotkeyFallbackOutcome RegisterWithFallback(
         HotkeySettings? desired,
         bool allowFallback = true,
@@ -77,7 +77,6 @@ public sealed class HotkeyService : IDisposable
                 "快捷键无效：至少需要包含一个修饰键和一个按键。");
         }
 
-        // 第一项永远是用户原本的组合。原组合可用时完全不涉及备用逻辑。
         HotkeyRegistrationResult primary = TryRegisterCore(desired, restoreOnFailure: true);
         if (primary.Success)
         {
@@ -94,7 +93,6 @@ public sealed class HotkeyService : IDisposable
 
         foreach (HotkeySettings candidate in candidates)
         {
-            // 候选列表的首项就是原组合，已经试过，跳过
             if (candidate.VirtualKey == desired.VirtualKey
                 && candidate.RegisterModifiers == desired.RegisterModifiers)
             {
@@ -122,7 +120,6 @@ public sealed class HotkeyService : IDisposable
             $"{primary.ErrorMessage} 备用的 {attempts - 1} 个组合也都被占用，请在设置中手动指定一个组合。");
     }
 
-    /// <summary>用当前快捷键重新注册一次（例如系统策略变化后）。</summary>
     public HotkeyRegistrationResult TryReregister() => TryRegister(_current);
 
     public void Dispose()
@@ -133,19 +130,10 @@ public sealed class HotkeyService : IDisposable
         }
 
         _disposed = true;
-        if (_window is not null)
-        {
-            _window.HotKeyReceived -= OnHotKeyReceived;
-        }
-
+        _window.HotKeyReceived -= OnHotKeyReceived;
         Unregister();
     }
 
-    /// <summary>
-    /// 注册的核心逻辑。<paramref name="restoreOnFailure"/> 为真时，失败后会尝试把原有快捷键注册回来，
-    /// 避免程序启动后完全没有可用快捷键；自动换用的循环里则必须关掉它，
-    /// 否则每次失败的尝试都会把中间态的组合注册上去，干扰后续判断。
-    /// </summary>
     private HotkeyRegistrationResult TryRegisterCore(HotkeySettings? settings, bool restoreOnFailure)
     {
         if (settings is null || !settings.IsValid)
@@ -156,7 +144,7 @@ public sealed class HotkeyService : IDisposable
         Unregister();
         HotkeySettings previous = _current;
 
-        if (!Win32.RegisterHotKey(_window.Handle, HotkeyId, settings.RegisterModifiers, settings.VirtualKey))
+        if (!Win32.RegisterHotKey(_window.Handle, _hotkeyId, settings.RegisterModifiers, settings.VirtualKey))
         {
             int error = Marshal.GetLastWin32Error();
             _logger.Error($"RegisterHotKey 失败（{settings.DisplayText}），Win32 错误码 {error}");
@@ -180,13 +168,13 @@ public sealed class HotkeyService : IDisposable
 
         _current = settings.Copy();
         _registered = true;
-        _logger.Info($"已注册全局快捷键 {_current.DisplayText}");
+        _logger.Info($"已注册全局快捷键 {_current.DisplayText}（ID 0x{_hotkeyId:X}）");
         return HotkeyRegistrationResult.Ok;
     }
 
     private void TryRestore(HotkeySettings previous)
     {
-        if (Win32.RegisterHotKey(_window.Handle, HotkeyId, previous.RegisterModifiers, previous.VirtualKey))
+        if (Win32.RegisterHotKey(_window.Handle, _hotkeyId, previous.RegisterModifiers, previous.VirtualKey))
         {
             _current = previous.Copy();
             _registered = true;
@@ -206,7 +194,7 @@ public sealed class HotkeyService : IDisposable
             return;
         }
 
-        if (!Win32.UnregisterHotKey(_window.Handle, HotkeyId))
+        if (!Win32.UnregisterHotKey(_window.Handle, _hotkeyId))
         {
             _logger.Warn($"UnregisterHotKey 失败，Win32 错误码 {Marshal.GetLastWin32Error()}");
         }
@@ -216,7 +204,7 @@ public sealed class HotkeyService : IDisposable
 
     private void OnHotKeyReceived(object? sender, int hotkeyId)
     {
-        if (hotkeyId == HotkeyId)
+        if (hotkeyId == _hotkeyId)
         {
             HotKeyPressed?.Invoke(this, EventArgs.Empty);
         }

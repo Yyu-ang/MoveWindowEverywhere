@@ -36,7 +36,6 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- 标题栏 -->
             <Grid Grid.Row="0" Margin="0,0,0,10">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -46,14 +45,13 @@
                            FontSize="14"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource TextBrush}"
-                           Text="移动窗口到目标显示器" />
+                           Text="{Binding HeaderText}" />
                 <TextBlock Grid.Column="1"
                            FontSize="12"
                            Foreground="{StaticResource AccentBrush}"
-                           Text="{Binding TargetMonitorText}" />
+                           Text="{Binding ContextText}" />
             </Grid>
 
-            <!-- 搜索框 -->
             <Grid Grid.Row="1">
                 <Border Background="{StaticResource SurfaceAltBrush}"
                         BorderBrush="{StaticResource BorderBrush}"
@@ -79,7 +77,6 @@
                            Visibility="{Binding IsSearchEmpty, Converter={StaticResource BooleanToVisibility}}" />
             </Grid>
 
-            <!-- 窗口列表 -->
             <Grid Grid.Row="2" Margin="0,10,0,8">
                 <ListBox x:Name="WindowListBox"
                          Background="Transparent"
@@ -101,7 +98,6 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <!-- 缩略图。截取在后台逐张进行，未完成或无法截取时显示占位文字 -->
                                 <Border Grid.Column="0"
                                         Width="96"
                                         Height="56"
@@ -201,16 +197,15 @@
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                         <TextBlock FontSize="13.5"
                                    Foreground="{StaticResource TextBrush}"
-                                   Text="没有可移动的窗口" />
+                                   Text="{Binding EmptyTitle}" />
                         <TextBlock Margin="0,4,0,0"
                                    FontSize="11.5"
                                    Foreground="{StaticResource MutedTextBrush}"
-                                   Text="当前没有匹配筛选条件的窗口，按 Esc 关闭" />
+                                   Text="{Binding EmptySubtitle}" />
                     </StackPanel>
                 </Border>
             </Grid>
 
-            <!-- 底部提示 -->
             <Grid Grid.Row="3">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -219,11 +214,11 @@
                 <TextBlock Grid.Column="0"
                            FontSize="11.5"
                            Foreground="{StaticResource MutedTextBrush}"
-                           Text="↑ ↓ 选择 · Enter 移动 · Esc 取消 · 双击移动" />
+                           Text="{Binding ActionHint}" />
                 <TextBlock Grid.Column="1"
                            FontSize="11.5"
                            Foreground="{StaticResource MutedTextBrush}"
-                           Text="目标：快捷键触发时鼠标所在的显示器" />
+                           Text="{Binding FooterText}" />
             </Grid>
         </Grid>
     </Border>
