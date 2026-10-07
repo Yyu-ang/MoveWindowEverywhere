@@ -6,13 +6,19 @@
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-0078D6?logo=windows&logoColor=white)](#system-requirements)
 [![Target Framework](https://img.shields.io/badge/.NET-8.0%20(WPF)-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![Tests](https://img.shields.io/badge/Tests-139%20Passed-brightgreen.svg)](#unit-tests)
+[![Tests](https://img.shields.io/badge/Tests-141%20Passed-brightgreen.svg)](#unit-tests)
 [![Single File](https://img.shields.io/badge/Release-Single%20Executable%20(~63MB)-orange.svg)](#build--publish)
 [![Zero Telemetry](https://img.shields.io/badge/Telemetry-None%20(100%25%20Offline)-success.svg)](#known-limitations--design-philosophy)
 
 [English](README_en.md) | [简体中文](README.md)
 
 </div>
+
+<p align="center">
+  <a href="docs/images/window-selector.png"><img src="docs/images/window-selector.png" width="49%" alt="Window selector showing searchable windows and monitor badges"></a>
+  <a href="docs/images/restore-selector.png"><img src="docs/images/restore-selector.png" width="49%" alt="Restore selector showing a window with valid restore history"></a>
+</p>
+<p align="center"><sub>Cropped, anonymized UI examples. <code>Alt + Z</code> moves a window; <code>Alt + X</code> restores its position, size, and state.</sub></p>
 
 ---
 
@@ -271,7 +277,7 @@ Move window everywhere/
 │     └─ Resources/
 │        └─ app.manifest                # Per-Monitor V2 DPI, supportedOS, asInvoker
 └─ tests/
-   └─ MoveWindowEverywhere.Tests/       # xUnit test suite (139 test cases)
+   └─ MoveWindowEverywhere.Tests/       # xUnit test suite (141 test cases)
 ```
 
 ---
@@ -326,7 +332,7 @@ Logs track startup, hotkey registration and auto-fallback, autostart registratio
 
 ## Unit Tests
 
-The test suite in `tests/MoveWindowEverywhere.Tests` contains **139 unit tests** covering:
+The test suite in `tests/MoveWindowEverywhere.Tests` contains **141 unit tests** covering:
 
 - `WindowFilterPolicyTests.cs`: Comprehensive coverage for all 10 filtering rules.
 - `WindowSearcherTests.cs`: Prefix and substring matching across titles and process names, multi-keyword queries, empty queries.

@@ -6,13 +6,19 @@
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-0078D6?logo=windows&logoColor=white)](#二系统要求)
 [![Target Framework](https://img.shields.io/badge/.NET-8.0%20(WPF)-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![Tests](https://img.shields.io/badge/Tests-139%20Passed-brightgreen.svg)](#十一单元测试)
+[![Tests](https://img.shields.io/badge/Tests-141%20Passed-brightgreen.svg)](#十一单元测试)
 [![Single File](https://img.shields.io/badge/Release-Single%20Executable%20(~63MB)-orange.svg)](#五发布命令)
 [![Zero Telemetry](https://img.shields.io/badge/Telemetry-None%20(100%25%20Offline)-success.svg)](#十已知限制)
 
 [English](README_en.md) | [简体中文](README.md)
 
 </div>
+
+<p align="center">
+  <a href="docs/images/window-selector.png"><img src="docs/images/window-selector.png" width="49%" alt="窗口移动选择器：搜索窗口并选择目标显示器"></a>
+  <a href="docs/images/restore-selector.png"><img src="docs/images/restore-selector.png" width="49%" alt="窗口恢复选择器：选择要恢复的窗口"></a>
+</p>
+<p align="center"><sub><code>Alt + Z</code> 移动窗口 · <code>Alt + X</code> 恢复位置、尺寸与窗口状态。截图已裁切并匿名化本机窗口信息。</sub></p>
 
 整个工具只有一个可执行文件，不联网、不需要账户、不安装后台服务、不写入启动项。
 
@@ -197,7 +203,7 @@ Move window everywhere/
 │     ├─ Views/                          SelectorWindow / SettingsWindow
 │     └─ Resources/app.manifest          Per-Monitor V2 DPI、supportedOS
 └─ tests/
-   └─ MoveWindowEverywhere.Tests/        xunit 单元测试（139 个用例）
+   └─ MoveWindowEverywhere.Tests/        xunit 单元测试（141 个用例）
 ```
 
 ---
@@ -406,7 +412,7 @@ dotnet test -c Release
 
 开机自启的测试会真实读写注册表，但只使用每次动态生成的临时子键 `HKCU\Software\MoveWindowEverywhere.Tests\<GUID>`，测试结束后整个临时键被删除，不会触碰真实的启动项。
 
-## 十二、本机构建验证记录
+## 十二、历史构建验证记录
 
 ### 构建 / 测试 / 发布
 
