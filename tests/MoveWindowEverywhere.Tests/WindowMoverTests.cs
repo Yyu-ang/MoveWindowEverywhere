@@ -1,6 +1,8 @@
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 using MoveWindowEverywhere.Models;
+using MoveWindowEverywhere.Native;
 using MoveWindowEverywhere.Services;
 using Xunit;
 
@@ -39,7 +41,6 @@ public sealed class WindowMoverTests
     [Fact]
     public void 已失效句柄应提示窗口已关闭()
     {
-        // 该句柄值不属于任何现存窗口，IsWindow 必然返回 false
         var invalidHandle = new IntPtr(0x00ABCDEF);
 
         WindowMoveResult result = CreateMover().MoveToMonitor(invalidHandle, CreateMonitor());
@@ -71,7 +72,7 @@ public sealed class WindowMoverTests
     }
 
     [Fact]
-    public void 真实窗口应被移动到目标显示器工作区中央并保留尺寸()
+    public void 真实窗口应支持多级恢复并还原每一步的位置与尺寸()
     {
         var monitorService = new MonitorService(new AppLogger());
         MonitorInfo? monitor = monitorService.GetPrimaryMonitor();
@@ -81,35 +82,48 @@ public sealed class WindowMoverTests
         {
             using var form = new Form
             {
-                Text = "MoveWindowEverywhere 单元测试窗口",
+                Text = "MoveWindowEverywhere 多级恢复测试窗口",
                 StartPosition = FormStartPosition.Manual,
-                Bounds = new System.Drawing.Rectangle(0, 0, 640, 480),
+                Bounds = new System.Drawing.Rectangle(37, 53, 640, 480),
                 ShowInTaskbar = false,
                 WindowState = FormWindowState.Normal,
             };
-
-            // 强制创建窗口句柄，但不显示窗口
             _ = form.Handle;
 
             var mover = CreateMover();
-            WindowMoveResult result = mover.MoveToMonitor(form.Handle, monitor);
+            WINDOWPLACEMENT firstOrigin = GetPlacement(form.Handle);
 
-            Assert.True(result.Success, result.Message);
-            Assert.Equal(640, form.Width);
-            Assert.Equal(480, form.Height);
+            WindowMoveResult firstMove = mover.MoveToMonitor(form.Handle, monitor);
+            Assert.True(firstMove.Success, firstMove.Message);
+            Assert.Equal(1, mover.GetRestoreCount(form.Handle));
+            Assert.Contains(form.Handle, mover.GetRestorableHandles());
 
-            double workWidth = monitor.WorkRect.Width;
-            double workHeight = monitor.WorkRect.Height;
-            int expectedLeft = (int)Math.Round(monitor.WorkRect.Left + (workWidth - form.Width) / 2.0);
-            int expectedTop = (int)Math.Round(monitor.WorkRect.Top + (workHeight - form.Height) / 2.0);
+            // 用户在第一次移动之后主动调整位置和尺寸；第二次 Alt+Z 应把这个新状态作为下一层历史。
+            form.Bounds = new System.Drawing.Rectangle(211, 187, 520, 390);
+            WINDOWPLACEMENT secondOrigin = GetPlacement(form.Handle);
 
-            Assert.InRange(form.Left, expectedLeft - 40, expectedLeft + 40);
-            Assert.InRange(form.Top, expectedTop - 40, expectedTop + 40);
+            WindowMoveResult secondMove = mover.MoveToMonitor(form.Handle, monitor);
+            Assert.True(secondMove.Success, secondMove.Message);
+            Assert.Equal(2, mover.GetRestoreCount(form.Handle));
+
+            // 再手工改大，恢复必须覆盖这些后续调整，回到第二次移动前的完整位置与尺寸。
+            form.Bounds = new System.Drawing.Rectangle(15, 25, 900, 700);
+
+            WindowMoveResult firstRestore = mover.RestorePrevious(form.Handle);
+            Assert.True(firstRestore.Success, firstRestore.Message);
+            AssertSamePlacement(secondOrigin, GetPlacement(form.Handle));
+            Assert.Equal(1, mover.GetRestoreCount(form.Handle));
+
+            WindowMoveResult secondRestore = mover.RestorePrevious(form.Handle);
+            Assert.True(secondRestore.Success, secondRestore.Message);
+            AssertSamePlacement(firstOrigin, GetPlacement(form.Handle));
+            Assert.Equal(0, mover.GetRestoreCount(form.Handle));
+            Assert.DoesNotContain(form.Handle, mover.GetRestorableHandles());
         });
     }
 
     [Fact]
-    public void 最小化窗口应恢复为可见普通窗口()
+    public void 最小化窗口移动后恢复应还原最小化状态与原始恢复矩形()
     {
         var monitorService = new MonitorService(new AppLogger());
         MonitorInfo? monitor = monitorService.GetPrimaryMonitor();
@@ -121,19 +135,46 @@ public sealed class WindowMoverTests
             {
                 Text = "MoveWindowEverywhere 最小化测试窗口",
                 StartPosition = FormStartPosition.Manual,
-                Bounds = new System.Drawing.Rectangle(0, 0, 500, 400),
+                Bounds = new System.Drawing.Rectangle(123, 91, 500, 400),
                 ShowInTaskbar = false,
             };
             _ = form.Handle;
+            // 先显示测试窗口再最小化，确保原生 HWND 的 WINDOWPLACEMENT 确实记录为最小化状态。
+            form.Show();
             form.WindowState = FormWindowState.Minimized;
+            WINDOWPLACEMENT original = GetPlacement(form.Handle);
 
-            WindowMoveResult result = CreateMover().MoveToMonitor(form.Handle, monitor);
+            var mover = CreateMover();
+            WindowMoveResult move = mover.MoveToMonitor(form.Handle, monitor);
 
-            Assert.True(result.Success, result.Message);
+            Assert.True(move.Success, move.Message);
             Assert.Equal(FormWindowState.Normal, form.WindowState);
-            Assert.Equal(500, form.Width);
-            Assert.Equal(400, form.Height);
+
+            WindowMoveResult restore = mover.RestorePrevious(form.Handle);
+            Assert.True(restore.Success, restore.Message);
+            Assert.Equal(FormWindowState.Minimized, form.WindowState);
+            AssertSamePlacement(original, GetPlacement(form.Handle));
         });
+    }
+
+    private static WINDOWPLACEMENT GetPlacement(IntPtr handle)
+    {
+        var placement = new WINDOWPLACEMENT
+        {
+            Length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>(),
+        };
+
+        Assert.True(Win32.GetWindowPlacement(handle, ref placement));
+        return placement;
+    }
+
+    private static void AssertSamePlacement(WINDOWPLACEMENT expected, WINDOWPLACEMENT actual)
+    {
+        Assert.Equal(expected.ShowCmd, actual.ShowCmd);
+        Assert.Equal(expected.RcNormalPosition.Left, actual.RcNormalPosition.Left);
+        Assert.Equal(expected.RcNormalPosition.Top, actual.RcNormalPosition.Top);
+        Assert.Equal(expected.RcNormalPosition.Right, actual.RcNormalPosition.Right);
+        Assert.Equal(expected.RcNormalPosition.Bottom, actual.RcNormalPosition.Bottom);
     }
 
     /// <summary>WinForms 窗体必须在 STA 线程上创建。</summary>

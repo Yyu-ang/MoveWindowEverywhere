@@ -29,6 +29,7 @@ public partial class App : System.Windows.Application
     private WindowMover _windowMover = null!;
     private HiddenMessageWindow _messageWindow = null!;
     private HotkeyService _hotkeyService = null!;
+    private HotkeyService _restoreHotkeyService = null!;
     private TrayIconService _trayIcon = null!;
     private StartupRegistrar _startupRegistrar = null!;
     private WindowThumbnailService _thumbnailService = null!;
@@ -73,12 +74,29 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        // 先占住 Alt + X。这样移动快捷键如果被配置为 Alt + X，后续注册会自动判定冲突并走备用组合。
+        RegisterRestoreHotkeyAtStartup();
         RegisterHotkeyAtStartup();
         SynchronizeStartupRegistration();
     }
 
+    /// <summary>注册固定的恢复快捷键 Alt + X。失败不影响移动功能，但会明确提示用户。</summary>
+    private void RegisterRestoreHotkeyAtStartup()
+    {
+        HotkeySettings restoreHotkey = HotkeySettings.CreateRestoreDefault();
+        HotkeyRegistrationResult result = _restoreHotkeyService.TryRegister(restoreHotkey);
+        if (result.Success)
+        {
+            return;
+        }
+
+        string message = result.ErrorMessage ?? $"注册恢复快捷键 {restoreHotkey.DisplayText} 失败。";
+        _logger.Error($"启动阶段注册恢复快捷键失败：{message}");
+        _trayIcon.ShowNotification("恢复快捷键未生效", message, WinForms.ToolTipIcon.Warning);
+    }
+
     /// <summary>
-    /// 启动阶段注册快捷键。被占用且开启了自动换用时，会改用备用组合并把实际生效的组合写回配置，
+    /// 启动阶段注册移动快捷键。被占用且开启了自动换用时，会改用备用组合并把实际生效的组合写回配置，
     /// 这样下次启动直接使用可用的组合，不会再走一遍失败流程。
     /// </summary>
     private void RegisterHotkeyAtStartup()
@@ -151,8 +169,15 @@ public partial class App : System.Windows.Application
         _messageWindow = new HiddenMessageWindow();
         _messageWindow.ShowSelectorRequested += (_, _) => OnTriggered("第二实例唤醒");
 
-        _hotkeyService = new HotkeyService(_messageWindow, _settings.Hotkey, _logger);
-        _hotkeyService.HotKeyPressed += (_, _) => OnTriggered("全局快捷键");
+        _hotkeyService = new HotkeyService(_messageWindow, _settings.Hotkey, _logger, HotkeyService.HotkeyId);
+        _hotkeyService.HotKeyPressed += (_, _) => OnTriggered("移动快捷键");
+
+        _restoreHotkeyService = new HotkeyService(
+            _messageWindow,
+            HotkeySettings.CreateRestoreDefault(),
+            _logger,
+            HotkeyService.RestoreHotkeyId);
+        _restoreHotkeyService.HotKeyPressed += (_, _) => OnRestoreTriggered();
 
         _trayIcon = new TrayIconService(_settings.Hotkey, _logger);
         _trayIcon.OpenSelectorRequested += (_, _) => OnTriggered("托盘菜单或双击图标");
@@ -199,7 +224,7 @@ public partial class App : System.Windows.Application
             MessageBoxImage.Information);
     }
 
-    /// <summary>快捷键或第二实例唤醒的统一入口：先记录触发来源，再打开选择器。</summary>
+    /// <summary>移动快捷键或第二实例唤醒的统一入口。</summary>
     private void OnTriggered(string source)
     {
         if (_isShuttingDown)
@@ -211,6 +236,17 @@ public partial class App : System.Windows.Application
         OpenSelector();
     }
 
+    private void OnRestoreTriggered()
+    {
+        if (_isShuttingDown)
+        {
+            return;
+        }
+
+        _logger?.Info("触发来源：恢复快捷键 Alt + X");
+        OpenRestoreSelector();
+    }
+
     private void OpenSelector()
     {
         if (_isShuttingDown)
@@ -220,6 +256,13 @@ public partial class App : System.Windows.Application
 
         Dispatcher.Invoke(() =>
         {
+            if (_selectorWindow is { IsVisible: true } visibleSelector
+                && visibleSelector.ViewModel.Mode != SelectorMode.Move)
+            {
+                visibleSelector.Close();
+                _selectorWindow = null;
+            }
+
             if (_selectorWindow is { } existing)
             {
                 if (existing.IsVisible)
@@ -271,7 +314,7 @@ public partial class App : System.Windows.Application
 
                 _logger.Info($"已打开窗口选择器：目标显示器 {targetMonitor.ShortDescription}，候选窗口 {windows.Count} 个，显示器 {monitors.Count} 台，枚举耗时 {stopwatch.ElapsedMilliseconds} ms");
 
-                var viewModel = new SelectorViewModel(targetMonitor);
+                var viewModel = new SelectorViewModel(targetMonitor, SelectorMode.Move);
                 viewModel.SetWindows(windows);
 
                 var selector = new SelectorWindow(
@@ -300,6 +343,118 @@ public partial class App : System.Windows.Application
                 // UI 异常不能导致托盘程序退出
                 _logger.Error("打开窗口选择器失败", ex);
                 Notify("Move Window Everywhere", "打开窗口选择器失败，详情见日志。");
+            }
+        });
+    }
+
+    private void OpenRestoreSelector()
+    {
+        if (_isShuttingDown)
+        {
+            return;
+        }
+
+        Dispatcher.Invoke(() =>
+        {
+            if (_selectorWindow is { IsVisible: true } visibleSelector)
+            {
+                if (visibleSelector.ViewModel.Mode == SelectorMode.Restore)
+                {
+                    visibleSelector.Activate();
+                    return;
+                }
+
+                visibleSelector.Close();
+                _selectorWindow = null;
+            }
+            else if (_selectorWindow is { } staleSelector)
+            {
+                try
+                {
+                    staleSelector.Close();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warn($"关闭残留选择器失败：{ex.Message}");
+                }
+
+                _selectorWindow = null;
+            }
+
+            try
+            {
+                IReadOnlyList<IntPtr> handles = _windowMover.GetRestorableHandles();
+                if (handles.Count == 0)
+                {
+                    Notify("Move Window Everywhere", "暂无可恢复的窗口。");
+                    return;
+                }
+
+                // 恢复选择器出现在哪块屏幕仍由按键瞬间的鼠标位置决定，但这不改变真正的恢复目标。
+                MonitorInfo? selectorMonitor = _monitorService.CaptureCursorMonitor() ?? _monitorService.GetPrimaryMonitor();
+                if (selectorMonitor is null)
+                {
+                    Notify("Move Window Everywhere", "未能捕获到显示器，请重试。");
+                    return;
+                }
+
+                var policy = new WindowFilterPolicy(new WindowFilterOptions { IncludeMinimizedWindows = true });
+                var windows = new List<WindowInfo>();
+                foreach (IntPtr handle in handles)
+                {
+                    WindowInfo? info = _windowEnumerator.TryCreateWindowInfo(handle);
+                    if (info is null)
+                    {
+                        _windowMover.ForgetRestoreHistory(handle);
+                        continue;
+                    }
+
+                    if (policy.IsIncluded(info))
+                    {
+                        windows.Add(info);
+                    }
+                }
+
+                if (windows.Count == 0)
+                {
+                    Notify("Move Window Everywhere", "暂无可恢复的窗口。");
+                    return;
+                }
+
+                IReadOnlyList<MonitorInfo> monitors = _monitorService.GetMonitors();
+                WindowMonitorAnnotator.Annotate(windows, monitors, IntPtr.Zero);
+
+                _logger.Info($"已打开恢复选择器：可恢复窗口 {windows.Count} 个");
+
+                var viewModel = new SelectorViewModel(selectorMonitor, SelectorMode.Restore);
+                viewModel.SetWindows(windows);
+
+                var selector = new SelectorWindow(
+                    viewModel,
+                    _windowMover,
+                    selectorMonitor,
+                    Notify,
+                    _settings.CloseSelectorOnFocusLost,
+                    _settings.ShowThumbnails,
+                    _thumbnailService,
+                    SelectorMode.Restore);
+
+                selector.Closed += (_, _) =>
+                {
+                    if (ReferenceEquals(_selectorWindow, selector))
+                    {
+                        _selectorWindow = null;
+                    }
+                };
+
+                _selectorWindow = selector;
+                selector.Show();
+                selector.Activate();
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("打开恢复选择器失败", ex);
+                Notify("Move Window Everywhere", "打开恢复选择器失败，详情见日志。");
             }
         });
     }
@@ -404,6 +559,13 @@ public partial class App : System.Windows.Application
 
     private HotkeyRegistrationResult RegisterHotkey(HotkeySettings candidate)
     {
+        HotkeySettings restoreHotkey = HotkeySettings.CreateRestoreDefault();
+        if (candidate.RegisterModifiers == restoreHotkey.RegisterModifiers
+            && candidate.VirtualKey == restoreHotkey.VirtualKey)
+        {
+            return HotkeyRegistrationResult.Fail("Alt + X 已保留给窗口恢复，请为移动功能选择其他快捷键。", true);
+        }
+
         HotkeyRegistrationResult result = _hotkeyService.TryRegister(candidate);
         if (!result.Success && result.ErrorMessage is { } message)
         {
@@ -435,11 +597,12 @@ public partial class App : System.Windows.Application
 
         System.Windows.MessageBox.Show(
             $"Move Window Everywhere v1.0.0{Environment.NewLine}{Environment.NewLine}"
-            + $"当前快捷键：{_settings.Hotkey.DisplayText}{Environment.NewLine}"
+            + $"移动快捷键：{_settings.Hotkey.DisplayText}{Environment.NewLine}"
+            + $"恢复快捷键：{HotkeySettings.CreateRestoreDefault().DisplayText}{Environment.NewLine}"
             + $"开机自启：{startupState}{Environment.NewLine}"
             + $"配置文件：{_settingsService.SettingsPath}{Environment.NewLine}"
             + $"日志目录：{AppPaths.LogDirectory}{Environment.NewLine}{Environment.NewLine}"
-            + "按下快捷键后选择窗口，即可把它移动到鼠标当时所在的显示器。",
+            + "Alt + Z（或自定义移动快捷键）用于移动；Alt + X 只显示当前会话中可恢复的窗口，并恢复位置、尺寸和窗口状态。",
             "关于 Move Window Everywhere",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
@@ -505,6 +668,15 @@ public partial class App : System.Windows.Application
         catch (Exception ex)
         {
             Debug.WriteLine($"注销快捷键失败：{ex.Message}");
+        }
+
+        try
+        {
+            _restoreHotkeyService?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"注销恢复快捷键失败：{ex.Message}");
         }
 
         try
