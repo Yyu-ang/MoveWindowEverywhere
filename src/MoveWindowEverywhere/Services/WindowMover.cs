@@ -355,7 +355,7 @@ public sealed class WindowMover
         }
 
         long style = Win32.GetWindowLongValue(handle, Win32.GWL_STYLE);
-        if ((style & Win32.WS_POPUP) == 0 || (style & Win32.WS_CAPTION) != 0)
+        if ((style & Win32.WS_CAPTION) != 0)
         {
             return false;
         }
