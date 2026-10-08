@@ -24,3 +24,21 @@ jobs:
         run: dotnet build MoveWindowEverywhere.sln -c Release --no-restore
       - name: Test
         run: dotnet test MoveWindowEverywhere.sln -c Release --no-build --no-restore
+      - name: Publish portable single-file Windows x64 EXE
+        shell: pwsh
+        run: |
+          dotnet publish src/MoveWindowEverywhere/MoveWindowEverywhere.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o "${{ runner.temp }}/mwe-portable"
+          $exe = Join-Path "${{ runner.temp }}/mwe-portable" "MoveWindowEverywhere.exe"
+          if (-not (Test-Path $exe)) { throw "Publish did not produce MoveWindowEverywhere.exe" }
+          $exeFile = Get-Item $exe
+          if ($exeFile.Length -lt 1048576) { throw "Unexpectedly small published EXE: $($exeFile.Length)" }
+          Get-FileHash $exe -Algorithm SHA256 | Format-List
+          Write-Host "Published portable EXE: $($exeFile.Length) bytes"
+      - name: Upload standalone EXE for PR testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoveWindowEverywhere-win-x64-portable
+          path: ${{ runner.temp }}/mwe-portable/MoveWindowEverywhere.exe
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
