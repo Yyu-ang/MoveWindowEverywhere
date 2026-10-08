@@ -228,8 +228,20 @@ public sealed class WindowMoverTests
                 ShowInTaskbar = false,
             };
             _ = form.Handle;
-            RECT originalBounds;
-            Assert.True(Win32.GetWindowRect(form.Handle, out originalBounds));
+            // Form initialization may clamp a nominally fullscreen window to the
+            // taskbar-adjusted work area. Set the HWND rectangle explicitly.
+            Assert.True(Win32.SetWindowPos(form.Handle, IntPtr.Zero,
+                (int)monitor.MonitorRect.Left, (int)monitor.MonitorRect.Top,
+                (int)monitor.MonitorRect.Width, (int)monitor.MonitorRect.Height,
+                Win32.SWP_NOZORDER | Win32.SWP_NOACTIVATE | Win32.SWP_FRAMECHANGED));
+            Assert.True(Win32.GetWindowRect(form.Handle, out RECT originalBounds));
+            Assert.True(WindowMover.CoversMonitor(originalBounds, new RECT
+            {
+                Left = (int)monitor.MonitorRect.Left,
+                Top = (int)monitor.MonitorRect.Top,
+                Right = (int)monitor.MonitorRect.Right,
+                Bottom = (int)monitor.MonitorRect.Bottom,
+            }));
 
             var mover = CreateMover();
             WindowMoveResult move = mover.MoveToMonitor(form.Handle, monitor);
