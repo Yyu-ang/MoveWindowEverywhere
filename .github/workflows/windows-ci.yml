@@ -1,6 +1,9 @@
 name: Windows build and tests
 
 on:
+  push:
+    branches:
+      - fix/thumbnails-fullscreen-restore
   pull_request:
   workflow_dispatch:
 
